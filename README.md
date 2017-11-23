@@ -1,4 +1,75 @@
-## 组成
+## spring cloud contract与传统pact对比
+### 总体
+
+```
+spring cloud contract
+优点:
+1. groovy编写契约，使用简单，效率高。
+2. 可以生成sub jar，当编写的服务依赖未完成的服务时，也可以测试运行。
+3. 可以利用插件自动生成提供端的契约验证代码。
+缺点：
+1. 契约要放置于提供端，需要消费端告知提供端需求，或者消费端编写契约手动传给提供端
+2. 对其他语言支持较弱，比如js
+
+pact
+优点:
+1. 契约由消费端直接在单元测试中编写，生成契约json，契约json可以上传pact broker，
+   提供端只需知道契约的state，便可以从pact broker获取该契约。
+2. 支持多种语言。
+ 
+缺点：
+1. 相比contract开发效率稍低。
+2. 无法生成sub jar，消费端在提供端未编写完成时，只能通过mock等方式测试。
+```
+### 流程
+**spring cloud contract**大致流程
+```
+消费端编写需求告知提供端 -> 提供端根据需求编写groovy契约 -> spring cloud contract插件生成sub jar -> 将sub jar发布到maven库 -> 消费端获取jar,运行模拟真实服务并测试 -> 提供端编写相关接口 ->提供端编写相关接口 -> 利用spring cloud contract插件生成契约验证代码，验证契约
+```
+**pact**大致流程
+```
+编写消费端api -> 在单元测试使用java编写契约 -> 单元测试中编写验证契约代码 -> 运行单元测试生成契约json -> 将契约json传到Pact Broker -> 提供端编写接口 -> 提供端通过pact broker拿到契约json，编写接口并验证契约
+```
+因为pact的支持多种编程语言及存在pact broker，选用了pact。
+
+### pact契约编写
+> spring cloud contract使用groovy或者spring rest docs；pact使用java DSL编写。
+
+**spring cloud contract**的契约编写
+```groovy
+Contract.make {
+    description "return all customers"
+    request {
+        url "/api/customers"
+        method GET()
+    }
+    response {
+        status 200
+        headers {
+            header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_UTF8_VALUE)
+        }
+        body("""{"data":[{"id":1,"name":"sam"},{"id":2,"name":"andy"}]}""")
+    }
+}
+
+```
+**pact**的契约编写
+```java
+  @Pact(state = "a single address", provider = "customerServiceProvider", consumer = "addressClient")
+  public RequestResponsePact createAddressResourcePact(PactDslWithProvider builder) {
+    return builder
+            .given("a single address")
+            .uponReceiving("a request to the address resource")
+            .path("/addresses/1")
+            .method("GET")
+            .willRespondWith()
+            .status(200)
+            .body("{\"data\":[{\"id\":1,\"name\":\"sam\"},{\"id\":2,\"name\":\"andy\"}]}",
+                    "application/hal+json")
+            .toPact();
+```
+
+## pact 事例项目组成
 ```
 project-service <- oauth-service <- user-service 
 project-service服务调用oauth-service服务获取jwt , oauth-service服务调用user-service查询用户
@@ -13,7 +84,7 @@ oauth-service的pact契约生成代码：oauth-service/src/test/java/com/hand/ha
 oauth-service的pact契约验证代码：oauth-service/src/test/java/com/hand/hap/cloud/pact/oauth/controller/OauthControllerProviderTest.java
 ```
 
-## 使用
+## 项目使用
 1. 本地mysql创建user_service数据库
 
 2. 启动pact broker
@@ -30,7 +101,7 @@ docker compose up
 3. 运行user-service下的UserLoginControllerProviderTest验证是否符合契约 
 ```
 
-## pact 上传和下载契约到pact broker的方法
+## pact上传和下载契约到pact broker的方法
 - maven添加插件
 
 ```xml
